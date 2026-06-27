@@ -1,0 +1,19 @@
+CREATE CONSTRAINT account_id_unique
+IF NOT EXISTS
+FOR (a:Account)
+REQUIRE a.id IS UNIQUE;
+
+CREATE CONSTRAINT entity_id_unique
+IF NOT EXISTS
+FOR (e:Entity)
+REQUIRE e.id IS UNIQUE;
+
+CREATE CONSTRAINT upi_unique
+IF NOT EXISTS
+FOR (u:UpiId)
+REQUIRE u.handle IS UNIQUE;
+
+CREATE CONSTRAINT phone_unique
+IF NOT EXISTS
+FOR (p:Phone)
+REQUIRE p.number IS UNIQUE;
