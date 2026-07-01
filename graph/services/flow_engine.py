@@ -34,6 +34,32 @@ _NAME_AFTER_VPA = re.compile(
 _MERCHANTS = ("PAYTM", "PHONEPE", "GOOGLE PAY", "GPAY", "AMAZON", "FLIPKART",
               "SWIGGY", "ZOMATO", "JIO", "AIRTEL")
 
+# fallback beneficiary-name extraction (reduces "unresolved" counterparties)
+_CD_TOKEN = re.compile(r"/(?:CR|DR)/([A-Za-z]{3,})")
+_ALPHA_TOKEN = re.compile(r"[A-Za-z]{4,}")
+_CP_STOPWORDS = {
+    "UPI", "IMPS", "NEFT", "RTGS", "ATM", "POS", "CASH", "SELF", "PAYMENT",
+    "PAY", "REQUEST", "TRANSFER", "CREDIT", "DEBIT", "BANK", "LIMITED", "LTD",
+    "BRANCH", "INDIA", "INR", "WITHDRAWAL", "DEPOSIT", "CHARGES", "CHARGE",
+    "GST", "INT", "OPENING", "CLOSING", "BALANCE", "BROUGHT", "FORWARD",
+    "REVERSAL", "REVERSED", "REFUND", "MOB", "CBS", "BULKPAYMENT", "NEFTCR",
+    "IMPSCR", "TRANSACTION", "ACCOUNT", "NUMBER", "VALUE", "DATE",
+}
+# IFSC bank-code prefixes — routing codes, not counterparties
+_BANK_CODES = {
+    "YESB", "HDFC", "ICIC", "SBIN", "BARB", "PUNB", "CNRB", "IDIB", "UTIB",
+    "UBIN", "MAHB", "IDFB", "INDB", "FINO", "IPOS", "AIRP", "ESFB", "UJVN",
+    "JAKA", "DCBL", "RATN", "FDRL", "SIBL", "KVBL", "KKBK", "IOBA", "PYTM",
+}
+
+
+def _beneficiary_token(narration_upper: str):
+    cands = [
+        t for t in _ALPHA_TOKEN.findall(narration_upper)
+        if t not in _CP_STOPWORDS and t not in _BANK_CODES
+    ]
+    return max(cands, key=len) if cands else None
+
 
 def _to_float(v):
     try:
@@ -59,7 +85,14 @@ def resolve_counterparty(narration: str):
             return mk
     if "ATM" in up or "CASH" in up:
         return "CASH"
-    return None
+    # beneficiary abbreviation right after /CR/ or /DR/
+    cd = _CD_TOKEN.search(narr)
+    if cd:
+        tok = cd.group(1).upper()
+        if tok not in _CP_STOPWORDS and tok not in _BANK_CODES:
+            return tok
+    # last resort: the most distinctive name token in the narration
+    return _beneficiary_token(up)
 
 
 def _classify(node_id: str) -> str:
