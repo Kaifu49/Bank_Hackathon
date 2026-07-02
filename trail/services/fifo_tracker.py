@@ -56,6 +56,14 @@ class FIFOTracker:
             elif direction == "DEBIT":
                 remaining_debit = amount
                 dest = resolve_counterparty(txn.get("narration"))
+                if not dest:
+                    dest = (
+                        txn.get("receiver_account") or
+                        txn.get("upi_id") or
+                        txn.get("reference_number") or
+                        txn.get("narration") or
+                        "Unspecified Account"
+                    )
                 while remaining_debit > 1e-9 and open_lots:
                     lot = open_lots[0]
                     take = min(remaining_debit, lot["remaining"])
