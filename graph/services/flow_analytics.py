@@ -13,28 +13,20 @@ from __future__ import annotations
 # --------------------------------------------------------------------------
 # Core Req 3 — round trips / circular flow
 # --------------------------------------------------------------------------
-def detect_round_trips(engine, max_len: int = 6, max_results: int = 200,
-                       scan_limit: int = 5000):
+def detect_round_trips(engine, max_len: int = 6, max_results: int = 200):
     """
     Enumerate simple directed cycles (money leaving a node and returning).
     Uses the 'smallest node id is the entry point' rule to find each cycle
-    exactly once and to prune the search (Johnson-style).
-
-    To keep the MOST SIGNIFICANT cycles when the graph has many, we scan up to
-    `scan_limit` cycles, then sort by bottleneck amount (desc) and keep the top
-    `max_results`. This avoids returning an arbitrary DFS-order subset when the
-    cap is hit. `scan_limit` bounds worst-case work on dense graphs.
+    exactly once and to prune the search (Johnson-style), so it stays cheap on
+    the sparse graphs real statements produce.
     """
     out = engine.out_adj
     order = {nid: i for i, nid in enumerate(sorted(engine.nodes))}
     results = []
-    capped = False
 
     for start in sorted(engine.nodes):
-        if len(results) >= scan_limit:
-            capped = True
-            break
         s_rank = order[start]
+        # iterative DFS; only visit nodes whose rank >= start's rank
         stack = [(start, [start])]
         while stack:
             node, path = stack.pop()
@@ -43,19 +35,15 @@ def detect_round_trips(engine, max_len: int = 6, max_results: int = 200,
                     continue
                 if nxt == start and len(path) >= 2:
                     results.append(_build_cycle(engine, path))
-                    if len(results) >= scan_limit:
-                        break
+                    if len(results) >= max_results:
+                        for i, c in enumerate(results):
+                            c["id"] = i
+                        return results
                 elif nxt not in path and len(path) <= max_len:
                     stack.append((nxt, path + [nxt]))
-            if len(results) >= scan_limit:
-                break
-
-    # rank by bottleneck (circulatable) amount and keep the strongest
     results.sort(key=lambda c: c["min_amount"], reverse=True)
-    results = results[:max_results]
     for i, c in enumerate(results):
         c["id"] = i                 # stable chain id for explanation lookups
-        c["scan_capped"] = capped
     return results
 
 

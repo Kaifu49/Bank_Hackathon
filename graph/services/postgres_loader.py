@@ -46,11 +46,15 @@ WHERE t.is_valid = true
 
 
 def _rows(query, params=None):
-    with _conn() as conn:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(query, params or [])
-            rows = cur.fetchall()
-    return [_clean(dict(r)) for r in rows]
+    conn = _conn()
+    try:
+        with conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(query, params or [])
+                rows = cur.fetchall()
+        return [_clean(dict(r)) for r in rows]
+    finally:
+        conn.close()
 
 
 def _clean(r):

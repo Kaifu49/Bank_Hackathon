@@ -263,7 +263,6 @@ def flow_clusters(request: FlowRequest):
 # ----- DB-driven: build the graph straight from Postgres (whole network) -----
 
 from services.postgres_loader import PostgresLoader        # noqa: E402
-from services import persistence                            # noqa: E402
 
 _loader = PostgresLoader()
 
@@ -283,43 +282,31 @@ def _full_result(eng):
     }
 
 
-def _analyze_all(refresh: bool = False):
-    """Whole-network analysis with persistence: cached unless refresh=true.
-    A single cached 'analyze' entry powers money-flow/round-trips/clusters."""
-    if not refresh:
-        cached = persistence.load("all", "analyze")
-        if cached:
-            return cached["payload"]
-    eng = _engine_from_rows(_loader.load_all_transactions())
-    result = _full_result(eng)
-    persistence.save("all", "analyze", result)
-    return result
-
-
 @app.get("/flow/analyze/all")
-def flow_analyze_all(refresh: bool = False):
-    return _analyze_all(refresh)
+def flow_analyze_all():
+    eng = _engine_from_rows(_loader.load_all_transactions())
+    return _full_result(eng)
 
 
 @app.get("/flow/money-flow/all")
-def flow_money_flow_all(refresh: bool = False):
-    a = _analyze_all(refresh)
-    g = a.get("graph", {})
-    return {"summary": a.get("summary"),
-            "nodes": g.get("nodes", []), "edges": g.get("edges", [])}
+def flow_money_flow_all():
+    eng = _engine_from_rows(_loader.load_all_transactions())
+    payload = fa.graph_payload(eng)
+    return {"summary": fa.money_flow_summary(eng),
+            "nodes": payload["nodes"], "edges": payload["edges"]}
 
 
 @app.get("/flow/round-trips/all")
-def flow_round_trips_all(refresh: bool = False):
-    a = _analyze_all(refresh)
-    rt = a.get("round_trips", [])
-    return {"count": len(rt), "round_trips": rt}
+def flow_round_trips_all():
+    eng = _engine_from_rows(_loader.load_all_transactions())
+    cycles = fa.detect_round_trips(eng)
+    return {"count": len(cycles), "round_trips": cycles}
 
 
 @app.get("/flow/clusters/all")
-def flow_clusters_all(refresh: bool = False):
-    a = _analyze_all(refresh)
-    return {"communities": a.get("communities", [])}
+def flow_clusters_all():
+    eng = _engine_from_rows(_loader.load_all_transactions())
+    return {"communities": fa.detect_communities(eng)}
 
 
 @app.get("/flow/analyze/statement/{statement_id}")
@@ -369,7 +356,7 @@ def _external_maps():
             acct, sc = r.get("account"), r.get("stat_score")
             if acct is not None and sc is not None:
                 anomaly_map[str(acct)] = float(sc)
-    t = _get_json(f"{TEMPORAL_URL}/temporal")
+    t = _get_json(f"{TEMPORAL_URL}/temporal/latest")
     if t and isinstance(t.get("results"), list):
         for r in t["results"]:
             acct, sc = r.get("account"), r.get("temporal_score")
@@ -389,24 +376,11 @@ def _risk_for_rows(rows, top_n=None, with_external=True):
     return scored[:top_n] if top_n else scored
 
 
-def _risk_all(refresh: bool = False, with_external: bool = True):
-    """Whole-network risk with persistence (cached unless refresh=true).
-    Only the external-signals-included variant is cached."""
-    if with_external and not refresh:
-        cached = persistence.load("all", "risk")
-        if cached:
-            return cached["payload"]
-    rows = _loader.load_all_transactions()
-    scored = _risk_for_rows(rows, with_external=with_external)
-    if with_external:
-        persistence.save("all", "risk", scored)
-    return scored
-
-
 @app.get("/risk/top")
-def risk_top(limit: int = 20, include_external: bool = True, refresh: bool = False):
-    scored = _risk_all(refresh=refresh, with_external=include_external)
-    return {"count": len(scored[:limit]), "top_risks": scored[:limit]}
+def risk_top(limit: int = 20, include_external: bool = True):
+    rows = _loader.load_all_transactions()
+    scored = _risk_for_rows(rows, top_n=limit, with_external=include_external)
+    return {"count": len(scored), "top_risks": scored}
 
 
 @app.get("/risk/account/{account}")
@@ -430,11 +404,46 @@ from services import investigation as inv                  # noqa: E402
 
 @app.get("/investigation/top-suspicious")
 def investigation_top_suspicious(limit: int = 20, account_only: bool = False,
-                                 include_external: bool = True,
-                                 refresh: bool = False):
-    scored = _risk_all(refresh=refresh, with_external=include_external)
-    return {"count": len(scored),
-            "accounts": inv.top_suspicious(scored, limit, account_only)}
+                                 include_external: bool = True):
+    from services.flow_engine import resolve_counterparty
+    rows = _loader.load_all_transactions()
+    scored = _risk_for_rows(rows, with_external=include_external)
+    
+    # Map node IDs to statement IDs
+    node_to_statements = {}
+    for r in rows:
+        sid = r.get("statement_id")
+        if not sid:
+            continue
+        sid_str = str(sid)
+        
+        # 1. Main account
+        holder = r.get("account")
+        if holder:
+            node_to_statements.setdefault(str(holder), set()).add(sid_str)
+            
+        # 2. Sender / Receiver
+        sender = r.get("sender_account")
+        if sender:
+            node_to_statements.setdefault(str(sender), set()).add(sid_str)
+        receiver = r.get("receiver_account")
+        if receiver:
+            node_to_statements.setdefault(str(receiver), set()).add(sid_str)
+            
+        # 3. Resolved counterparty
+        counterparty = resolve_counterparty(r.get("narration"))
+        if counterparty:
+            node_to_statements.setdefault(str(counterparty), set()).add(sid_str)
+
+    accounts = inv.top_suspicious(scored, limit, account_only)
+    for acct in accounts:
+        node_id = str(acct.get("account", ""))
+        sids = list(node_to_statements.get(node_id, set()))
+        if node_id.startswith("STMT:") and not sids:
+            sids = [node_id.replace("STMT:", "")]
+        acct["statement_ids"] = sids
+
+    return {"count": len(accounts), "accounts": accounts}
 
 
 @app.get("/investigation/counterparties/{account}")
