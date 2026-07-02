@@ -22,14 +22,6 @@ def health():
     }
 
 
-@app.get("/temporal")
-def temporal_all():
-
-    result = service.all()
-
-    return {"count": len(result), "results": result}
-
-
 @app.get("/temporal/latest")
 def temporal_latest():
 

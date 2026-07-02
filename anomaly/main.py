@@ -28,7 +28,7 @@ def health():
 @app.get("/anomaly")
 def anomaly():
 
-    result = service.process()
+    result = service.latest()
 
     return {
 

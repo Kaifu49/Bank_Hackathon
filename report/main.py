@@ -31,13 +31,13 @@ def _download(data: bytes, media_type: str, filename: str):
 
 
 @app.get("/report/{case_id}/json")
-def report_json(case_id: str, refresh: bool = False):
-    return JSONResponse(builder.build(case_id, refresh=refresh))
+def report_json(case_id: str):
+    return JSONResponse(builder.build(case_id))
 
 
 @app.get("/report/{case_id}/excel")
-def report_excel(case_id: str, refresh: bool = False):
-    data = build_excel(builder.build(case_id, refresh=refresh))
+def report_excel(case_id: str):
+    data = build_excel(builder.build(case_id))
     return _download(
         data,
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -46,8 +46,8 @@ def report_excel(case_id: str, refresh: bool = False):
 
 
 @app.get("/report/{case_id}/docx")
-def report_docx(case_id: str, refresh: bool = False):
-    data = build_docx(builder.build(case_id, refresh=refresh))
+def report_docx(case_id: str):
+    data = build_docx(builder.build(case_id))
     return _download(
         data,
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -56,10 +56,10 @@ def report_docx(case_id: str, refresh: bool = False):
 
 
 @app.get("/report/{case_id}/pdf")
-def report_pdf(case_id: str, refresh: bool = False):
+def report_pdf(case_id: str):
     try:
         from services.pdf_report import build_pdf
-        data = build_pdf(builder.build(case_id, refresh=refresh))
+        data = build_pdf(builder.build(case_id))
     except ImportError:
         return JSONResponse(
             status_code=501,

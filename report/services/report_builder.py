@@ -9,7 +9,6 @@ import os
 import urllib.request
 
 from services.postgres_loader import PostgresLoader
-from services import persistence
 
 GRAPH_URL = os.getenv("GRAPH_URL", "http://localhost:8005")
 
@@ -28,23 +27,12 @@ class ReportBuilder:
     def __init__(self):
         self.loader = PostgresLoader()
 
-    def build(self, case_id="all", refresh=False):
-        if not refresh:
-            cached = persistence.load(case_id, "report")
-            if cached:
-                return cached
-
-        scoped = case_id and case_id != "all"
-        stmt = case_id if scoped else None
-
-        counts = self.loader.summary_counts(stmt)
-        validation = self.loader.validation_summary(stmt)
+    def build(self, case_id="all"):
+        counts = self.loader.summary_counts()
+        validation = self.loader.validation_summary()
         entities = self.loader.top_entities(25)
 
-        if scoped:
-            analysis = _get(f"{GRAPH_URL}/flow/analyze/statement/{case_id}")
-        else:
-            analysis = _get(f"{GRAPH_URL}/flow/analyze/all")
+        analysis = _get(f"{GRAPH_URL}/flow/analyze/all")
         risks = _get(f"{GRAPH_URL}/risk/top?limit=20")
 
         mf = analysis.get("summary", {}) if isinstance(analysis, dict) else {}
@@ -83,7 +71,6 @@ class ReportBuilder:
             "validation": validation,
             "recommendations": self._recommendations(mf, round_trips, top_risks, validation),
         }
-        persistence.save(case_id, "report", report)
         return report
 
     def _recommendations(self, mf, round_trips, top_risks, validation):

@@ -27,16 +27,6 @@ class AnomalyService:
             PostgresLoader()
         )
 
-    def process(self):
-        """Score ALL accounts across the whole dataset (used by GET /anomaly)."""
-        transactions = (
-            self.loader
-            .load_all_transactions()
-            .to_dict("records")
-        )
-        features = self.builder.build(transactions)
-        return self.detector.detect(features)
-
     def latest(self):
 
         transactions = (

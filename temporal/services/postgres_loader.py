@@ -13,24 +13,7 @@ class PostgresLoader:
             user="postgres",
             password="postgres"
         )
-
-    def load_all_transactions(self):
-        """All clean transactions across statements, with sender_account filled
-        from the statement holder when null (covers single-account data)."""
-        query = """
-        SELECT
-            COALESCE(t.sender_account, s.account_number,
-                     'STMT:' || t.statement_id::text) AS sender_account,
-            t.receiver_account,
-            t.amount,
-            t.txn_type,
-            t.date,
-            t.statement_id
-        FROM transactions t
-        JOIN statements s ON s.id = t.statement_id
-        WHERE t.is_valid = true
-        """
-        return pd.read_sql(query, self.conn)
+        self.conn.autocommit = True
 
     def load_latest_statement_transactions(
         self
